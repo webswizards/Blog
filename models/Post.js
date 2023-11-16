@@ -30,8 +30,7 @@ const postSchema = new mongoose.Schema(
       type: String,
     },
     image: {
-      url: String,
-      public_id: String,
+      type: String,
     },
     category: {
       type: mongoose.Schema.Types.ObjectId,

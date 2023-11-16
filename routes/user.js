@@ -9,8 +9,8 @@ const {
   showSinglePost,
   editPost,
   deletePost,
-  uploadimg,
-  showAllPost
+  showAllPost,
+  showSinglePostById
 } = require("../Controllers/Post");
 
 const {
@@ -37,7 +37,9 @@ router.post("/deletepost", auth, isAdmin, deletePost);
 router.get("/showallpost", showPost);
 router.get("/showallpostall", showAllPost);
 router.post("/showsinglepost", showSinglePost);
-router.post("/uploadimg", uploadimg);
+router.post("/showsinglepostbyid", showSinglePostById);
+
+
 
 router.post('/contact',contactUsController);
 module.exports = router;

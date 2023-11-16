@@ -1,9 +1,8 @@
 const Category = require("../models/Category");
 const Post = require("../models/Post");
 
-function getRandomInt(max) {
-  return Math.floor(Math.random() * max);
-}
+const NodeCache = require("node-cache");
+const cache = new NodeCache({ stdTTL: 300 });
 exports.createCategory = async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -50,7 +49,9 @@ exports.categoryPageDetails = async (req, res) => {
 
     const selectedCategory = await Category.findOne({
       name: name,
-    }).populate('posts').exec();
+    })
+      .populate("posts")
+      .exec();
 
     res.status(200).json({
       success: true,
@@ -72,6 +73,17 @@ exports.categoryPageDetailspage = async (req, res) => {
     const { name } = req.body;
     const pageNumber = parseInt(page) || 1;
     const perPage = 12; // Number of posts to display per page
+
+    // Check if the data is already in the cache
+    const cacheKey = `categoryPage_${name}_${pageNumber}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+      return res.status(200).json({
+        success: true,
+        data: cachedData,
+      });
+    }
+
     const selectedCategory = await Category.findOne({ name: name });
 
     if (!selectedCategory) {
@@ -81,24 +93,28 @@ exports.categoryPageDetailspage = async (req, res) => {
       });
     }
 
-    console.log("first");
-
     const totalPosts = selectedCategory.posts.length;
     const totalPages = Math.ceil(totalPosts / perPage);
-    console.log("second");
 
     const skip = (pageNumber - 1) * perPage;
     const limit = perPage;
-    console.log("third");
 
     const categoryPosts = await Post.find({
       category: selectedCategory._id,
     })
       .skip(skip)
       .limit(limit)
-      .populate("category") // Fix the typo here
+      .populate("category")
       .sort({ createdAt: -1 })
       .exec();
+
+    // Cache the data for future requests
+    cache.set(cacheKey, {
+      category: selectedCategory,
+      currentPage: pageNumber,
+      totalPages: totalPages,
+      posts: categoryPosts,
+    });
 
     res.status(200).json({
       success: true,
@@ -117,4 +133,3 @@ exports.categoryPageDetailspage = async (req, res) => {
     });
   }
 };
-

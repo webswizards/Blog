@@ -1,6 +1,18 @@
 const Post = require("../models/Post");
 const Category = require("../models/Category");
 const { uploadImageToCloudinary } = require("../utils/imageUploader");
+const NodeCache = require("node-cache");
+const cache = new NodeCache({ stdTTL: 300 });
+
+const clearCacheForPostsPage = async () => {
+  const perPage = 12;
+  const totalPosts = await Post.countDocuments();
+  // Clear the cache for all pages
+  for (let page = 1; page <= Math.ceil(totalPosts / perPage); page++) {
+    const cacheKey = `posts_page_${page}`;
+    cache.del(cacheKey);
+  }
+};
 
 //create post
 exports.createPost = async (req, res) => {
@@ -44,10 +56,7 @@ exports.createPost = async (req, res) => {
       category: categoryDetails._id,
       postUrl,
       keywords,
-      image: {
-        public_id: thumbnailImage.public_id,
-        url: thumbnailImage.secure_url,
-      },
+      image: thumbnailImage.secure_url,
     });
 
     const categoryDetails2 = await Category.findByIdAndUpdate(
@@ -118,6 +127,8 @@ exports.deletePost = async (req, res) => {
         { new: true }
       );
 
+      clearCacheForPostsPage();
+
       res.status(200).json({
         success: true,
         message: "Post deleted successfully",
@@ -184,11 +195,13 @@ exports.editPost = async (req, res) => {
         process.env.FOLDER_NAME
       );
       post.thumbnail = thumbnailImage.secure_url;
+
+
     }
 
     // Save the updated post
     await post.save();
-
+    clearCacheForPostsPage();
     res.status(200).json({
       success: true,
       post,
@@ -202,45 +215,37 @@ exports.editPost = async (req, res) => {
   }
 };
 
-const Img = require("../models/Img");
-
-exports.uploadimg = async (req, res) => {
-  try {
-    const thumbnail = req.files.thumbnailImage;
-    // Upload the Thumbnail to Cloudinary
-    const thumbnailImage = await uploadImageToCloudinary(
-      thumbnail,
-      process.env.FOLDER_NAME
-    );
-
-    const img = await Img.create({
-      image: {
-        public_id: thumbnailImage.public_id,
-        url: thumbnailImage.secure_url,
-      },
-    });
-
-    res.status(201).json({
-      success: true,
-      img,
-    });
-  } catch (error) {
-    console.log(error);
-  }
-};
 
 exports.showPost = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1; // Get the page number from the query parameters
-    const perPage = 12; // Number of posts to display per page
+    const page = parseInt(req.query.page) || 1;
+    const perPage = 12;
 
-    const totalPosts = await Post.countDocuments(); // Get the total number of posts
+    // Check if the data is already in the cache
+    const cacheKey = `posts_page_${page}`;
+    const cachedData = cache.get(cacheKey);
 
+    if (cachedData) {
+      console.log("Data retrieved from cache.");
+      return res.status(200).json({
+        success: true,
+        currentPage: page,
+        totalPages: Math.ceil(cachedData.totalPosts / perPage),
+        posts: cachedData.posts,
+      });
+    }
+
+    // If data is not in the cache, fetch it from the database
+    const totalPosts = await Post.countDocuments();
     const posts = await Post.find()
       .sort({ createdAt: -1 })
       .populate("category")
-      .skip((page - 1) * perPage) // Skip the posts on previous pages
-      .limit(perPage); // Limit the number of posts per page
+      .skip((page - 1) * perPage)
+      .limit(perPage);
+
+    // Store the fetched data in the cache with a TTL of 5 minutes
+    cache.set(cacheKey, { totalPosts, posts });
+    console.log(posts)
 
     res.status(200).json({
       success: true,
@@ -264,6 +269,35 @@ exports.showAllPost = async (req, res) => {
       success: true,
       posts,
     });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+exports.showSinglePostById = async (req, res) => {
+  try {
+    const { url } = req.body; // Get the URL from the request body
+
+    
+
+    const post = await Post.findById(url)
+      .populate("category")
+      .exec();
+
+    if (post) {
+      res.status(200).json({
+        success: true,
+        post,
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "Post not found",
+      });
+    }
   } catch (error) {
     res.status(500).json({
       success: false,
